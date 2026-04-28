@@ -80,6 +80,38 @@ How to install Seanime
 
 <br>
 
+## Tracker mode
+
+This fork can use either AniList or MyAnimeList as the anime tracker source.
+
+Set `SEANIME_TRACKER=mal` to use MAL for the anime collection, anime details, and playback progress updates. Set `SEANIME_TRACKER=anilist` or leave it unset to use the original AniList behavior.
+
+On macOS LaunchAgent installs, switch to MAL:
+
+```sh
+/usr/libexec/PlistBuddy -c 'Set :EnvironmentVariables:SEANIME_TRACKER mal' ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:SEANIME_TRACKER string mal' ~/Library/LaunchAgents/app.seanime.server.plist
+
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null || true
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist
+```
+
+Switch back to AniList:
+
+```sh
+/usr/libexec/PlistBuddy -c 'Set :EnvironmentVariables:SEANIME_TRACKER anilist' ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:SEANIME_TRACKER string anilist' ~/Library/LaunchAgents/app.seanime.server.plist
+
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null || true
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist
+```
+
+Check the active mode:
+
+```sh
+curl -s http://127.0.0.1:43211/api/v1/status | jq -r '.data.trackerMode'
+```
+
 ## Goal
 
 This is a one-person project and may not meet every use case. If it doesn’t fully fit your needs, other tools might be a better match.
