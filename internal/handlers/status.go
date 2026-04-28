@@ -10,6 +10,7 @@ import (
 	"seanime/internal/constants"
 	"seanime/internal/core"
 	"seanime/internal/database/models"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/report"
 	"seanime/internal/user"
 	"seanime/internal/util"
@@ -41,6 +42,8 @@ type Status struct {
 	TorrentstreamSettings *models.TorrentstreamSettings `json:"torrentstreamSettings"`
 	DebridSettings        *models.DebridSettings        `json:"debridSettings"`
 	AnilistClientID       string                        `json:"anilistClientId"`
+	MalConnected          bool                          `json:"malConnected"`
+	TrackerMode           string                        `json:"trackerMode"`
 	Updating              bool                          `json:"updating"`         // If true, a new screen will be displayed
 	IsDesktopSidecar      bool                          `json:"isDesktopSidecar"` // The server is running as a desktop sidecar
 	FeatureFlags          core.FeatureFlags             `json:"featureFlags"`
@@ -67,7 +70,7 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 	var currentUser *user.User
 	var settings *models.Settings
 	var theme *models.Theme
-	//var mal *models.Mal
+	var mal *models.Mal
 
 	if c.Get("unauthenticated") != nil && c.Get("unauthenticated").(bool) {
 		// unauthenticated -> return bare minimum
@@ -105,6 +108,7 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 
 	theme, _ = h.App.Database.GetThemeCopy()
 	theme.HomeItems = nil
+	mal, _ = h.App.Database.GetMalInfo()
 
 	status := &Status{
 		OS:                    runtime.GOOS,
@@ -122,6 +126,8 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 		TorrentstreamSettings: h.App.SecondarySettings.Torrentstream,
 		DebridSettings:        h.App.SecondarySettings.Debrid,
 		AnilistClientID:       h.App.Config.Anilist.ClientID,
+		MalConnected:          mal != nil,
+		TrackerMode:           malcollection.TrackerMode(),
 		Updating:              false,
 		IsDesktopSidecar:      h.App.IsDesktopSidecar,
 		FeatureFlags:          h.App.FeatureFlags,

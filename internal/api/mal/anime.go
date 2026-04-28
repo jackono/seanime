@@ -45,6 +45,25 @@ type (
 				Medium string `json:"medium"`
 				Large  string `json:"large"`
 			} `json:"main_picture"`
+			AlternativeTitles struct {
+				Synonyms []string `json:"synonyms"`
+				En       string   `json:"en"`
+				Ja       string   `json:"ja"`
+			} `json:"alternative_titles"`
+			StartDate   string `json:"start_date"`
+			EndDate     string `json:"end_date"`
+			StartSeason struct {
+				Year   int    `json:"year"`
+				Season string `json:"season"`
+			} `json:"start_season"`
+			Synopsis    string      `json:"synopsis"`
+			NSFW        string      `json:"nsfw"`
+			NumEpisodes int         `json:"num_episodes"`
+			Mean        float32     `json:"mean"`
+			Rank        int         `json:"rank"`
+			Popularity  int         `json:"popularity"`
+			MediaType   MediaType   `json:"media_type"`
+			Status      MediaStatus `json:"status"`
 		} `json:"node"`
 		ListStatus struct {
 			Status             MediaListStatus `json:"status"`
@@ -80,7 +99,7 @@ func (w *Wrapper) GetAnimeDetails(mId int) (*BasicAnime, error) {
 func (w *Wrapper) GetAnimeCollection() ([]*AnimeListEntry, error) {
 	w.logger.Debug().Msg("mal: Getting anime collection")
 
-	reqUrl := fmt.Sprintf("%s/users/@me/animelist?fields=list_status&limit=1000", ApiBaseURL)
+	reqUrl := fmt.Sprintf("%s/users/@me/animelist?fields=%s,list_status&limit=1000", ApiBaseURL, url.QueryEscape(BaseAnimeFields))
 
 	type response struct {
 		Data []*AnimeListEntry `json:"data"`

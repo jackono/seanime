@@ -10,6 +10,7 @@ import (
 	"seanime/internal/extension"
 	"seanime/internal/hook"
 	"seanime/internal/local"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/platforms/platform"
 	"seanime/internal/platforms/shared_platform"
 	"seanime/internal/util"
@@ -34,6 +35,7 @@ type SimulatedPlatform struct {
 
 	// Cache for collections
 	animeCollection                *anilist.AnimeCollection
+	animeCollectionFromMAL         bool
 	mangaCollection                *anilist.MangaCollection
 	mu                             sync.RWMutex
 	collectionMu                   sync.RWMutex // used to protect access to collections
@@ -262,6 +264,17 @@ func (sp *SimulatedPlatform) DeleteEntry(ctx context.Context, mediaId, entryId i
 func (sp *SimulatedPlatform) GetAnime(ctx context.Context, mediaID int) (*anilist.BaseAnime, error) {
 	sp.logger.Trace().Int("mediaID", mediaID).Msg("simulated platform: Getting anime")
 
+	if media, err := malcollection.GetAnime(sp.db, sp.logger, mediaID); err == nil {
+		triggeredMedia, err := sp.helper.TriggerGetAnimeEvent(media)
+		if err != nil {
+			return nil, err
+		}
+		sp.helper.SetCachedBaseAnime(mediaID, triggeredMedia)
+		return triggeredMedia, nil
+	} else {
+		sp.logger.Debug().Err(err).Msg("mal: Falling back to simulated anime")
+	}
+
 	if cachedAnime, ok := sp.helper.GetCachedBaseAnime(mediaID); ok {
 		sp.logger.Trace().Msg("simulated platform: Returning anime from cache")
 		return sp.helper.TriggerGetAnimeEvent(cachedAnime)
@@ -345,6 +358,12 @@ func (sp *SimulatedPlatform) GetAnimeByMalID(ctx context.Context, malID int) (*a
 
 func (sp *SimulatedPlatform) GetAnimeDetails(ctx context.Context, mediaID int) (*anilist.AnimeDetailsById_Media, error) {
 	sp.logger.Trace().Int("mediaID", mediaID).Msg("simulated platform: Getting anime details")
+
+	if media, err := malcollection.GetAnimeDetails(sp.db, sp.logger, mediaID); err == nil {
+		return sp.helper.TriggerGetAnimeDetailsEvent(media)
+	} else {
+		sp.logger.Debug().Err(err).Msg("mal: Falling back to simulated anime details")
+	}
 
 	// Check if this is a custom source entry
 	if media, isCustom, err := sp.helper.HandleCustomSourceAnimeDetails(ctx, mediaID); isCustom {
@@ -470,6 +489,14 @@ func (sp *SimulatedPlatform) GetAnimeCollection(ctx context.Context, bypassCache
 	sp.logger.Trace().Bool("bypassCache", bypassCache).Msg("simulated platform: Getting anime collection")
 
 	if !bypassCache && sp.animeCollection != nil {
+		_, malErr := sp.db.GetMalInfo()
+		if malErr == nil && !sp.animeCollectionFromMAL {
+			goto fetchMALCollection
+		}
+		if malErr != nil && sp.animeCollectionFromMAL {
+			sp.invalidateAnimeCollectionCache()
+			goto fetchMALCollection
+		}
 		event := new(platform.GetCachedAnimeCollectionEvent)
 		event.AnimeCollection = sp.animeCollection
 		err := hook.GlobalHookManager.OnGetCachedAnimeCollection().Trigger(event)
@@ -481,6 +508,22 @@ func (sp *SimulatedPlatform) GetAnimeCollection(ctx context.Context, bypassCache
 
 	if bypassCache {
 		sp.invalidateAnimeCollectionCache()
+	}
+
+fetchMALCollection:
+	if collection, err := malcollection.GetAnimeCollection(sp.db, sp.logger); err == nil {
+		sp.animeCollection = collection
+		sp.animeCollectionFromMAL = true
+		sp.helper.MergeCustomSourceAnimeEntries(collection)
+		event := new(platform.GetAnimeCollectionEvent)
+		event.AnimeCollection = collection
+		err = hook.GlobalHookManager.OnGetAnimeCollection().Trigger(event)
+		if err != nil {
+			return nil, err
+		}
+		return event.AnimeCollection, nil
+	} else {
+		sp.logger.Debug().Err(err).Msg("mal: Falling back to simulated anime collection")
 	}
 
 	collection, err := sp.getOrCreateAnimeCollection()
@@ -506,6 +549,14 @@ func (sp *SimulatedPlatform) GetRawAnimeCollection(ctx context.Context, bypassCa
 	sp.logger.Trace().Bool("bypassCache", bypassCache).Msg("simulated platform: Getting raw anime collection")
 
 	if !bypassCache && sp.animeCollection != nil {
+		_, malErr := sp.db.GetMalInfo()
+		if malErr == nil && !sp.animeCollectionFromMAL {
+			goto fetchMALRawCollection
+		}
+		if malErr != nil && sp.animeCollectionFromMAL {
+			sp.invalidateAnimeCollectionCache()
+			goto fetchMALRawCollection
+		}
 		event := new(platform.GetCachedRawAnimeCollectionEvent)
 		event.AnimeCollection = sp.animeCollection
 		err := hook.GlobalHookManager.OnGetCachedRawAnimeCollection().Trigger(event)
@@ -517,6 +568,22 @@ func (sp *SimulatedPlatform) GetRawAnimeCollection(ctx context.Context, bypassCa
 
 	if bypassCache {
 		sp.invalidateAnimeCollectionCache()
+	}
+
+fetchMALRawCollection:
+	if collection, err := malcollection.GetAnimeCollection(sp.db, sp.logger); err == nil {
+		sp.animeCollection = collection
+		sp.animeCollectionFromMAL = true
+		sp.helper.MergeCustomSourceAnimeEntries(collection)
+		event := new(platform.GetRawAnimeCollectionEvent)
+		event.AnimeCollection = collection
+		err = hook.GlobalHookManager.OnGetRawAnimeCollection().Trigger(event)
+		if err != nil {
+			return nil, err
+		}
+		return event.AnimeCollection, nil
+	} else {
+		sp.logger.Debug().Err(err).Msg("mal: Falling back to simulated raw anime collection")
 	}
 
 	collection, err := sp.getOrCreateAnimeCollection()
@@ -999,6 +1066,7 @@ func (sp *SimulatedPlatform) invalidateAnimeCollectionCache() {
 	sp.collectionMu.Lock()
 	defer sp.collectionMu.Unlock()
 	sp.animeCollection = nil
+	sp.animeCollectionFromMAL = false
 }
 
 func (sp *SimulatedPlatform) invalidateMangaCollectionCache() {

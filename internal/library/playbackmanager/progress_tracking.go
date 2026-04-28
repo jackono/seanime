@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"seanime/internal/api/mal"
 	"seanime/internal/continuity"
 	discordrpc_presence "seanime/internal/discordrpc/presence"
 	"seanime/internal/events"
@@ -607,6 +609,7 @@ func (pm *PlaybackManager) SyncCurrentProgress() error {
 func (pm *PlaybackManager) updateProgress() (err error) {
 
 	var mediaId int
+	var malId *int
 	var epNum int
 	var totalEpisodes int
 
@@ -623,6 +626,7 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 
 		/// Online
 		mediaId = pm.currentMediaListEntry.MustGet().GetMedia().GetID()
+		malId = pm.currentMediaListEntry.MustGet().GetMedia().GetIDMal()
 		epNum = pm.currentLocalFileWrapperEntry.MustGet().GetProgressNumber(pm.currentLocalFile.MustGet())
 		totalEpisodes = pm.currentMediaListEntry.MustGet().GetMedia().GetTotalEpisodeCount() // total episode count or -1
 
@@ -636,6 +640,7 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 		}
 
 		mediaId = pm.currentStreamMedia.MustGet().ID
+		malId = pm.currentStreamMedia.MustGet().GetIDMal()
 		epNum = pm.currentStreamEpisode.MustGet().GetProgressNumber()
 		totalEpisodes = pm.currentStreamMedia.MustGet().GetTotalEpisodeCount() // total episode count or -1
 
@@ -675,6 +680,12 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 	)
 	if err != nil {
 		pm.Logger.Error().Err(err).Msg("playback manager: Error occurred while updating progress on AniList")
+		if malErr := pm.updateProgressOnMAL(malId, epNum); malErr == nil {
+			pm.Logger.Info().Msg("playback manager: Updated progress on MyAnimeList after AniList failure")
+			return nil
+		} else {
+			pm.Logger.Error().Err(malErr).Msg("playback manager: Error occurred while updating progress on MyAnimeList")
+		}
 		return ErrProgressUpdateAnilist
 	}
 
@@ -683,4 +694,25 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 	pm.Logger.Info().Msg("playback manager: Updated progress on AniList")
 
 	return nil
+}
+
+func (pm *PlaybackManager) updateProgressOnMAL(malId *int, epNum int) error {
+	if malId == nil || *malId == 0 {
+		return fmt.Errorf("MAL media ID not found")
+	}
+
+	malInfo, err := pm.Database.GetMalInfo()
+	if err != nil {
+		return err
+	}
+
+	malInfo, err = mal.VerifyMALAuth(malInfo, pm.Database, pm.Logger)
+	if err != nil {
+		return err
+	}
+
+	malWrapper := mal.NewWrapper(malInfo.AccessToken, pm.Logger)
+	return malWrapper.UpdateAnimeProgress(&mal.AnimeListProgressParams{
+		NumEpisodesWatched: &epNum,
+	}, *malId)
 }

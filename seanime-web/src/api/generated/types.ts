@@ -2879,6 +2879,8 @@ export type Status = {
     torrentstreamSettings?: Models_TorrentstreamSettings
     debridSettings?: Models_DebridSettings
     anilistClientId: string
+    malConnected: boolean
+    trackerMode: string
     /**
      * If true, a new screen will be displayed
      */
@@ -5494,4 +5496,3 @@ export type Video = {
     colorTransfer: string
     colorPrimaries: string
 }
-

@@ -8,6 +8,7 @@ import (
 	"seanime/internal/database/db"
 	"seanime/internal/extension"
 	"seanime/internal/hook"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/platforms/platform"
 	"seanime/internal/platforms/shared_platform"
 	"seanime/internal/util"
@@ -27,6 +28,7 @@ type (
 		useFixtureCollections  bool
 		animeCollection        mo.Option[*anilist.AnimeCollection]
 		rawAnimeCollection     mo.Option[*anilist.AnimeCollection]
+		animeCollectionFromMAL bool
 		mangaCollection        mo.Option[*anilist.MangaCollection]
 		rawMangaCollection     mo.Option[*anilist.MangaCollection]
 		isOffline              bool
@@ -189,6 +191,12 @@ func (ap *AnilistPlatform) DeleteEntry(ctx context.Context, mediaID, entryId int
 func (ap *AnilistPlatform) GetAnime(ctx context.Context, mediaID int) (*anilist.BaseAnime, error) {
 	ap.logger.Trace().Int("mediaId", mediaID).Msg("anilist platform: Fetching anime")
 
+	if media, err := malcollection.GetAnime(ap.db, ap.logger, mediaID); err == nil {
+		return ap.helper.TriggerGetAnimeEvent(media)
+	} else {
+		ap.logger.Debug().Err(err).Msg("mal: Falling back to AniList anime")
+	}
+
 	if cachedAnime, ok := ap.helper.GetCachedBaseAnime(mediaID); ok {
 		ap.logger.Trace().Msg("anilist platform: Returning anime from cache")
 		return ap.helper.TriggerGetAnimeEvent(cachedAnime)
@@ -238,6 +246,12 @@ func (ap *AnilistPlatform) GetAnimeByMalID(ctx context.Context, malID int) (*ani
 
 func (ap *AnilistPlatform) GetAnimeDetails(ctx context.Context, mediaID int) (*anilist.AnimeDetailsById_Media, error) {
 	ap.logger.Trace().Int("mediaId", mediaID).Msg("anilist platform: Fetching anime details")
+
+	if media, err := malcollection.GetAnimeDetails(ap.db, ap.logger, mediaID); err == nil {
+		return ap.helper.TriggerGetAnimeDetailsEvent(media)
+	} else {
+		ap.logger.Debug().Err(err).Msg("mal: Falling back to AniList anime details")
+	}
 
 	// Check if this is a custom source entry
 	if media, isCustom, err := ap.helper.HandleCustomSourceAnimeDetails(ctx, mediaID); isCustom {
@@ -343,6 +357,16 @@ func (ap *AnilistPlatform) GetMangaDetails(ctx context.Context, mediaID int) (*a
 
 func (ap *AnilistPlatform) GetAnimeCollection(ctx context.Context, bypassCache bool) (*anilist.AnimeCollection, error) {
 	if !bypassCache && ap.animeCollection.IsPresent() {
+		_, malErr := ap.db.GetMalInfo()
+		if malErr == nil && !ap.animeCollectionFromMAL {
+			goto fetchMALCollection
+		}
+		if malErr != nil && ap.animeCollectionFromMAL {
+			ap.animeCollection = mo.None[*anilist.AnimeCollection]()
+			ap.rawAnimeCollection = mo.None[*anilist.AnimeCollection]()
+			ap.animeCollectionFromMAL = false
+			goto fetchMALCollection
+		}
 		event := new(platform.GetCachedAnimeCollectionEvent)
 		event.AnimeCollection = ap.animeCollection.MustGet()
 		err := hook.GlobalHookManager.OnGetCachedAnimeCollection().Trigger(event)
@@ -350,6 +374,22 @@ func (ap *AnilistPlatform) GetAnimeCollection(ctx context.Context, bypassCache b
 			return nil, err
 		}
 		return event.AnimeCollection, nil
+	}
+
+fetchMALCollection:
+	if collection, err := malcollection.GetAnimeCollection(ap.db, ap.logger); err == nil {
+		ap.animeCollection = mo.Some(collection)
+		ap.rawAnimeCollection = mo.Some(collection)
+		ap.animeCollectionFromMAL = true
+		event := new(platform.GetAnimeCollectionEvent)
+		event.AnimeCollection = collection
+		err = hook.GlobalHookManager.OnGetAnimeCollection().Trigger(event)
+		if err != nil {
+			return nil, err
+		}
+		return event.AnimeCollection, nil
+	} else {
+		ap.logger.Debug().Err(err).Msg("mal: Falling back to AniList anime collection")
 	}
 
 	if _, ok := ap.getUsername(); !ok {
@@ -374,6 +414,16 @@ func (ap *AnilistPlatform) GetAnimeCollection(ctx context.Context, bypassCache b
 
 func (ap *AnilistPlatform) GetRawAnimeCollection(ctx context.Context, bypassCache bool) (*anilist.AnimeCollection, error) {
 	if !bypassCache && ap.rawAnimeCollection.IsPresent() {
+		_, malErr := ap.db.GetMalInfo()
+		if malErr == nil && !ap.animeCollectionFromMAL {
+			goto fetchMALRawCollection
+		}
+		if malErr != nil && ap.animeCollectionFromMAL {
+			ap.animeCollection = mo.None[*anilist.AnimeCollection]()
+			ap.rawAnimeCollection = mo.None[*anilist.AnimeCollection]()
+			ap.animeCollectionFromMAL = false
+			goto fetchMALRawCollection
+		}
 		event := new(platform.GetCachedRawAnimeCollectionEvent)
 		event.AnimeCollection = ap.rawAnimeCollection.MustGet()
 		err := hook.GlobalHookManager.OnGetCachedRawAnimeCollection().Trigger(event)
@@ -381,6 +431,22 @@ func (ap *AnilistPlatform) GetRawAnimeCollection(ctx context.Context, bypassCach
 			return nil, err
 		}
 		return event.AnimeCollection, nil
+	}
+
+fetchMALRawCollection:
+	if collection, err := malcollection.GetAnimeCollection(ap.db, ap.logger); err == nil {
+		ap.animeCollection = mo.Some(collection)
+		ap.rawAnimeCollection = mo.Some(collection)
+		ap.animeCollectionFromMAL = true
+		event := new(platform.GetRawAnimeCollectionEvent)
+		event.AnimeCollection = collection
+		err = hook.GlobalHookManager.OnGetRawAnimeCollection().Trigger(event)
+		if err != nil {
+			return nil, err
+		}
+		return event.AnimeCollection, nil
+	} else {
+		ap.logger.Debug().Err(err).Msg("mal: Falling back to AniList raw anime collection")
 	}
 
 	if _, ok := ap.getUsername(); !ok {
