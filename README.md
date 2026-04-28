@@ -106,10 +106,30 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist 2
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist
 ```
 
+On Windows PowerShell, switch to MAL for the current user:
+
+```powershell
+[Environment]::SetEnvironmentVariable("SEANIME_TRACKER", "mal", "User")
+```
+
+Switch back to AniList:
+
+```powershell
+[Environment]::SetEnvironmentVariable("SEANIME_TRACKER", "anilist", "User")
+```
+
+Restart Seanime after changing the Windows environment variable. If you launch Seanime from an already-open terminal, close and reopen that terminal first.
+
 Check the active mode:
 
 ```sh
 curl -s http://127.0.0.1:43211/api/v1/status | jq -r '.data.trackerMode'
+```
+
+On Windows PowerShell without `jq`:
+
+```powershell
+(Invoke-RestMethod http://127.0.0.1:43211/api/v1/status).data.trackerMode
 ```
 
 ## Goal
