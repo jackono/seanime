@@ -160,6 +160,7 @@ func InitRoutes(app *core.App, e *echo.Echo) {
 	// Auth
 	v1.POST("/auth/login", h.HandleLogin)
 	v1.POST("/auth/logout", h.HandleLogout)
+	v1.POST("/tracker/mode", h.HandleSetTrackerMode)
 
 	// Settings
 	v1.GET("/settings", h.HandleGetSettings)

@@ -8,6 +8,7 @@ import (
 	"seanime/internal/constants"
 	"seanime/internal/util"
 	"strconv"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
@@ -27,6 +28,7 @@ type Config struct {
 		AccessAllowlist []string // Additional remote hosts/origins allowed through the passwordless API/events boundary
 		TrustedProxies  []string // Explicit reverse proxies allowed to supply forwarded client IP/host/proto headers
 		ExternalURL     string   // Canonical public URL used for proxy-aware secure cookies and request normalization
+		TrackerMode     string   // "anilist" or "mal"; controls which list provider Seanime uses
 		Tls             struct {
 			Enabled  bool
 			CertPath string
@@ -139,6 +141,7 @@ func NewConfig(options *ConfigOptions, logger *zerolog.Logger) (*Config, error) 
 	viper.SetDefault("server.host", defaultHost)
 	viper.SetDefault("server.port", defaultPort)
 	viper.SetDefault("server.offline", false)
+	viper.SetDefault("server.trackerMode", defaultTrackerMode())
 	//viper.SetDefault("server.secureMode", "")
 	//viper.SetDefault("server.accessAllowlist", []string{})
 	//viper.SetDefault("server.trustedProxies", []string{})
@@ -209,6 +212,7 @@ func NewConfig(options *ConfigOptions, logger *zerolog.Logger) (*Config, error) 
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, err
 	}
+	cfg.Server.TrackerMode = normalizeTrackerMode(cfg.Server.TrackerMode)
 
 	// Update the config if the version has changed
 	if err := updateVersion(cfg, options); err != nil {
@@ -242,6 +246,20 @@ func NewConfig(options *ConfigOptions, logger *zerolog.Logger) (*Config, error) 
 	go loadLogo(options.EmbeddedLogo, dataDir)
 
 	return cfg, nil
+}
+
+func defaultTrackerMode() string {
+	if strings.EqualFold(os.Getenv("SEANIME_TRACKER"), "mal") {
+		return "mal"
+	}
+	return "anilist"
+}
+
+func normalizeTrackerMode(mode string) string {
+	if strings.EqualFold(mode, "mal") {
+		return "mal"
+	}
+	return "anilist"
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

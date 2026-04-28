@@ -1,6 +1,8 @@
 import { useRefreshAnimeCollection } from "@/api/hooks/anilist.hooks"
 import { useLogout } from "@/api/hooks/auth.hooks"
 import { useGetExtensionUpdateData as useGetExtensionUpdateData, usePluginWithIssuesCount } from "@/api/hooks/extensions.hooks"
+import { useMALLogout } from "@/api/hooks/mal.hooks"
+import { useSetTrackerMode } from "@/api/hooks/tracker.hooks"
 import { isLoginModalOpenAtom } from "@/app/(main)/_atoms/server-status.atoms"
 import { useSyncIsActive } from "@/app/(main)/_atoms/sync.atoms"
 import { ElectronUpdateModal } from "@/app/(main)/_electron/electron-update-modal"
@@ -26,7 +28,7 @@ import { Modal } from "@/components/ui/modal"
 import { VerticalMenu, VerticalMenuItem } from "@/components/ui/vertical-menu"
 import { openTab } from "@/lib/helpers/browser"
 import { usePathname, useRouter } from "@/lib/navigation"
-import { ANILIST_OAUTH_URL, ANILIST_PIN_URL } from "@/lib/server/config"
+import { ANILIST_OAUTH_URL, ANILIST_PIN_URL, MAL_CLIENT_ID } from "@/lib/server/config"
 import { TORRENT_CLIENT, TORRENT_PROVIDER } from "@/lib/server/settings"
 import { WSEvents } from "@/lib/server/ws-events"
 import { useThemeSettings } from "@/lib/theme/theme-hooks"
@@ -41,7 +43,7 @@ import { LuBookOpen, LuCalendar, LuCompass, LuRefreshCw, LuRss, LuSettings } fro
 import { MdOutlineConnectWithoutContact } from "react-icons/md"
 import { PiArrowCircleLeftDuotone, PiArrowCircleRightDuotone } from "react-icons/pi"
 import { RiListCheck3 } from "react-icons/ri"
-import { SiQbittorrent, SiTransmission } from "react-icons/si"
+import { SiAnilist, SiMyanimelist, SiQbittorrent, SiTransmission } from "react-icons/si"
 import { TbReportSearch } from "react-icons/tb"
 import { nakamaModalOpenAtom, useNakamaStatus } from "../nakama/nakama-manager"
 import { PluginSidebarTray } from "../plugin/tray/plugin-sidebar-tray"
@@ -549,11 +551,27 @@ function SidebarFooter({ isCollapsed, onLogout }: { isCollapsed: boolean, onLogo
 function SidebarUser({ isCollapsed, expandedSidebar, onLogout }: { isCollapsed: boolean, expandedSidebar: boolean, onLogout: () => void }) {
     const ctx = useAppSidebarContext()
     const user = useCurrentUser()
+    const serverStatus = useServerStatus()
     const router = useRouter()
 
     const [dropdownOpen, setDropdownOpen] = React.useState(false)
     const [loginModal, setLoginModal] = useAtom(isLoginModalOpenAtom)
     const [loggingIn, setLoggingIn] = React.useState(false)
+    const { mutate: setTrackerMode, isPending: trackerModePending } = useSetTrackerMode()
+    const { mutate: logoutMAL, isPending: malLogoutPending } = useMALLogout()
+
+    const anilistConnected = serverStatus?.anilistConnected ?? (!!user && !user.isSimulated)
+    const malConnected = !!serverStatus?.malConnected
+    const trackerMode = serverStatus?.trackerMode || "anilist"
+    const canStartMALAuth = typeof window !== "undefined" &&
+        (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost")
+
+    const openMALAuth = React.useCallback(() => {
+        const state = crypto.randomUUID()
+        const challenge = crypto.randomUUID().replaceAll("-", "")
+        sessionStorage.setItem("mal-" + state, challenge)
+        window.location.href = `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${MAL_CLIENT_ID}&state=${state}&code_challenge=${challenge}&code_challenge_method=plain`
+    }, [])
 
     // Sign out
     const confirmSignOut = useConfirmationDialog({
@@ -597,61 +615,113 @@ function SidebarUser({ isCollapsed, expandedSidebar, onLogout }: { isCollapsed: 
                     open={dropdownOpen}
                     onOpenChange={setDropdownOpen}
                 >
+                    {!user.isSimulated && <DropdownMenuItem onClick={() => setLoginModal(true)}>
+                        <RiListCheck3 /> Tracking accounts
+                    </DropdownMenuItem>}
                     {!user.isSimulated ? <DropdownMenuItem onClick={confirmSignOut.open}>
                         <BiLogOut /> Sign out
                     </DropdownMenuItem> : <DropdownMenuItem onClick={() => setLoginModal(true)}>
-                        <BiLogIn /> Log in with AniList
+                        <BiLogIn /> Tracking accounts
                     </DropdownMenuItem>}
                 </DropdownMenu>
             </div>}
 
             <Modal
-                title="Log in with AniList"
-                description="Using an AniList account is recommended."
-                open={loginModal && user?.isSimulated}
+                title="Tracking accounts"
+                description="Connect AniList and MyAnimeList, then choose the one Seanime should use."
+                open={loginModal}
                 onOpenChange={(v) => setLoginModal(v)}
                 overlayClass="bg-opacity-95 bg-gray-950"
                 contentClass="border"
             >
-                <div className="mt-5 text-center space-y-4">
+                <div className="mt-5 space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-md border border-[--border] p-4 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2 font-medium">
+                                    <SiAnilist className="text-xl" />
+                                    AniList
+                                </div>
+                                <Badge intent={anilistConnected ? "success" : "gray"}>{anilistConnected ? "Connected" : "Not connected"}</Badge>
+                            </div>
+                            {!anilistConnected && <div className="space-y-3">
+                                <SeaLink href={ANILIST_PIN_URL} target="_blank">
+                                    <Button leftIcon={<SiAnilist />} intent="white" size="sm">Get AniList token</Button>
+                                </SeaLink>
+                                <Form
+                                    schema={defineSchema(({ z }) => z.object({
+                                        token: z.string().min(1, "Token is required"),
+                                    }))}
+                                    onSubmit={data => {
+                                        setLoggingIn(true)
+                                        router.push("/auth/callback#access_token=" + data.token.trim())
+                                        setLoginModal(false)
+                                        setLoggingIn(false)
+                                    }}
+                                >
+                                    <Field.Textarea
+                                        name="token"
+                                        label="Enter the token"
+                                    />
+                                    <Field.Submit showLoadingOverlayOnSuccess loading={loggingIn}>Continue</Field.Submit>
+                                </Form>
+                            </div>}
+                        </div>
 
-                    <SeaLink
-                        href={ANILIST_PIN_URL}
-                        target="_blank"
-                    >
-                        <Button
-                            leftIcon={<svg
-                                xmlns="http://www.w3.org/2000/svg" fill="currentColor" width="24" height="24"
-                                viewBox="0 0 24 24" role="img"
+                        <div className="rounded-md border border-[--border] p-4 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2 font-medium">
+                                    <SiMyanimelist className="text-xl" />
+                                    MyAnimeList
+                                </div>
+                                <Badge intent={malConnected ? "success" : "gray"}>{malConnected ? "Connected" : "Not connected"}</Badge>
+                            </div>
+                            {malConnected ? <Button
+                                leftIcon={<BiLogOut />}
+                                intent="gray-outline"
+                                size="sm"
+                                loading={malLogoutPending}
+                                onClick={() => logoutMAL()}
                             >
-                                <path
-                                    d="M6.361 2.943 0 21.056h4.942l1.077-3.133H11.4l1.052 3.133H22.9c.71 0 1.1-.392 1.1-1.101V17.53c0-.71-.39-1.101-1.1-1.101h-6.483V4.045c0-.71-.392-1.102-1.101-1.102h-2.422c-.71 0-1.101.392-1.101 1.102v1.064l-.758-2.166zm2.324 5.948 1.688 5.018H7.144z"
-                                />
-                            </svg>}
-                            intent="white"
-                            size="md"
-                        >Get AniList token</Button>
-                    </SeaLink>
+                                Log out of MAL
+                            </Button> : <Button
+                                leftIcon={<SiMyanimelist />}
+                                intent="white"
+                                size="sm"
+                                disabled={!canStartMALAuth}
+                                onClick={openMALAuth}
+                            >
+                                Log in with MAL
+                            </Button>}
+                            {!malConnected && !canStartMALAuth && <p className="text-sm text-[--muted]">
+                                MAL login must be started from localhost.
+                            </p>}
+                        </div>
+                    </div>
 
-                    <Form
-                        schema={defineSchema(({ z }) => z.object({
-                            token: z.string().min(1, "Token is required"),
-                        }))}
-                        onSubmit={data => {
-                            setLoggingIn(true)
-                            router.push("/auth/callback#access_token=" + data.token.trim())
-                            setLoginModal(false)
-                            setLoggingIn(false)
-                        }}
-                    >
-                        <Field.Textarea
-                            name="token"
-                            label="Enter the token"
-                            fieldClass="px-4"
-                        />
-                        <Field.Submit showLoadingOverlayOnSuccess loading={loggingIn}>Continue</Field.Submit>
-                    </Form>
-
+                    <div className="rounded-md border border-[--border] p-4 space-y-3">
+                        <p className="font-medium">Service to use</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            <Button
+                                leftIcon={<SiAnilist />}
+                                intent={trackerMode === "anilist" ? "primary" : "gray-outline"}
+                                disabled={!anilistConnected || trackerModePending}
+                                loading={trackerModePending && trackerMode !== "anilist"}
+                                onClick={() => setTrackerMode({ mode: "anilist" })}
+                            >
+                                AniList
+                            </Button>
+                            <Button
+                                leftIcon={<SiMyanimelist />}
+                                intent={trackerMode === "mal" ? "primary" : "gray-outline"}
+                                disabled={!malConnected || trackerModePending}
+                                loading={trackerModePending && trackerMode !== "mal"}
+                                onClick={() => setTrackerMode({ mode: "mal" })}
+                            >
+                                MyAnimeList
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             </Modal>
 

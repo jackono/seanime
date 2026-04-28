@@ -1122,6 +1122,13 @@ export const API_ENDPOINTS = {
             endpoint: "/api/v1/mal/logout",
         },
     },
+    TRACKER: {
+        SetTrackerMode: {
+            key: "TRACKER-set-tracker-mode",
+            methods: ["POST"],
+            endpoint: "/api/v1/tracker/mode",
+        },
+    },
     MANGA: {
         GetAnilistMangaCollection: {
             key: "MANGA-get-anilist-manga-collection",
@@ -2303,4 +2310,3 @@ export const API_ENDPOINTS = {
         },
     },
 } satisfies ApiEndpoints
-

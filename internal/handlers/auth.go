@@ -5,11 +5,13 @@ import (
 	"errors"
 	"seanime/internal/database/models"
 	"seanime/internal/platforms/anilist_platform"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/util"
 	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/labstack/echo/v4"
+	"github.com/spf13/viper"
 )
 
 // HandleLogin
@@ -101,6 +103,14 @@ func (h *Handler) HandleLogin(c echo.Context) error {
 //	@returns handlers.Status
 func (h *Handler) HandleLogout(c echo.Context) error {
 	h.App.LogoutFromAnilist()
+	if malcollection.TrackerMode() == malcollection.TrackerAnilist {
+		if _, err := h.App.Database.GetMalInfo(); err == nil {
+			h.App.Config.Server.TrackerMode = malcollection.TrackerMAL
+			malcollection.SetTrackerMode(malcollection.TrackerMAL)
+			viper.Set("server.trackerMode", malcollection.TrackerMAL)
+			_ = viper.WriteConfig()
+		}
+	}
 
 	status := h.NewStatus(c)
 	return h.RespondWithData(c, status)

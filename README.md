@@ -84,43 +84,11 @@ How to install Seanime
 
 This fork can use either AniList or MyAnimeList as the anime tracker source.
 
-Set `SEANIME_TRACKER=mal` to use MAL for the anime collection, anime details, and playback progress updates. Set `SEANIME_TRACKER=anilist` or leave it unset to use the original AniList behavior.
+Open the user menu in Seanime and choose **Tracking accounts**. Connect AniList, MyAnimeList, or both, then select the one service Seanime should use. The choice is saved in `config.toml` as `server.trackerMode` and controls the anime collection, anime details, and playback progress updates.
 
-On macOS LaunchAgent installs, switch to MAL:
+The old `SEANIME_TRACKER` environment variable is only used as a first-run default when `server.trackerMode` is not present in the config.
 
-```sh
-/usr/libexec/PlistBuddy -c 'Set :EnvironmentVariables:SEANIME_TRACKER mal' ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:SEANIME_TRACKER string mal' ~/Library/LaunchAgents/app.seanime.server.plist
-
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null || true
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist
-```
-
-Switch back to AniList:
-
-```sh
-/usr/libexec/PlistBuddy -c 'Set :EnvironmentVariables:SEANIME_TRACKER anilist' ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:SEANIME_TRACKER string anilist' ~/Library/LaunchAgents/app.seanime.server.plist
-
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist 2>/dev/null || true
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.seanime.server.plist
-```
-
-On Windows PowerShell, switch to MAL for the current user:
-
-```powershell
-[Environment]::SetEnvironmentVariable("SEANIME_TRACKER", "mal", "User")
-```
-
-Switch back to AniList:
-
-```powershell
-[Environment]::SetEnvironmentVariable("SEANIME_TRACKER", "anilist", "User")
-```
-
-Restart Seanime after changing the Windows environment variable. If you launch Seanime from an already-open terminal, close and reopen that terminal first.
-
-Check the active mode:
+Check the active mode from a terminal if needed:
 
 ```sh
 curl -s http://127.0.0.1:43211/api/v1/status | jq -r '.data.trackerMode'
@@ -138,7 +106,7 @@ This is a one-person project and may not meet every use case. If it doesn’t fu
 
 ### Not planned
 
-- Built-in support for other trackers such as MyAnimeList, Trakt, SIMKL, etc.
+- Built-in support for other trackers such as Trakt, SIMKL, etc.
 - Built-in support for other media players
 - Built-in localization (translations)
 

@@ -2879,6 +2879,7 @@ export type Status = {
     torrentstreamSettings?: Models_TorrentstreamSettings
     debridSettings?: Models_DebridSettings
     anilistClientId: string
+    anilistConnected: boolean
     malConnected: boolean
     trackerMode: string
     /**

@@ -42,6 +42,7 @@ type Status struct {
 	TorrentstreamSettings *models.TorrentstreamSettings `json:"torrentstreamSettings"`
 	DebridSettings        *models.DebridSettings        `json:"debridSettings"`
 	AnilistClientID       string                        `json:"anilistClientId"`
+	AnilistConnected      bool                          `json:"anilistConnected"`
 	MalConnected          bool                          `json:"malConnected"`
 	TrackerMode           string                        `json:"trackerMode"`
 	Updating              bool                          `json:"updating"`         // If true, a new screen will be displayed
@@ -126,6 +127,7 @@ func (h *Handler) NewStatus(c echo.Context) *Status {
 		TorrentstreamSettings: h.App.SecondarySettings.Torrentstream,
 		DebridSettings:        h.App.SecondarySettings.Debrid,
 		AnilistClientID:       h.App.Config.Anilist.ClientID,
+		AnilistConnected:      dbAcc != nil,
 		MalConnected:          mal != nil,
 		TrackerMode:           malcollection.TrackerMode(),
 		Updating:              false,

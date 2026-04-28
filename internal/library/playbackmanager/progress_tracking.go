@@ -11,6 +11,7 @@ import (
 	"seanime/internal/events"
 	"seanime/internal/library/anime"
 	"seanime/internal/mediaplayers/mediaplayer"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/util"
 
 	"github.com/samber/mo"
@@ -603,8 +604,7 @@ func (pm *PlaybackManager) SyncCurrentProgress() error {
 	return nil
 }
 
-// updateProgress updates the progress of the current video playback on AniList and MyAnimeList.
-// This only returns an error if the progress update fails on AniList
+// updateProgress updates the progress of the current video playback on the active tracker.
 //   - /!\ When this is called, the PlaybackState should have been pushed to the history
 func (pm *PlaybackManager) updateProgress() (err error) {
 
@@ -671,6 +671,19 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 		return errors.New("media ID not found")
 	}
 
+	if malcollection.Enabled() {
+		if malId == nil && mediaId != 0 {
+			malId = &mediaId
+		}
+		if err := pm.updateProgressOnMAL(malId, epNum); err != nil {
+			pm.Logger.Error().Err(err).Msg("playback manager: Error occurred while updating progress on MyAnimeList")
+			return ErrProgressUpdateMAL
+		}
+		pm.refreshAnimeCollectionFunc()
+		pm.Logger.Info().Msg("playback manager: Updated progress on MyAnimeList")
+		return nil
+	}
+
 	// Update the progress on AniList
 	err = pm.platformRef.Get().UpdateEntryProgress(
 		context.Background(),
@@ -680,12 +693,6 @@ func (pm *PlaybackManager) updateProgress() (err error) {
 	)
 	if err != nil {
 		pm.Logger.Error().Err(err).Msg("playback manager: Error occurred while updating progress on AniList")
-		if malErr := pm.updateProgressOnMAL(malId, epNum); malErr == nil {
-			pm.Logger.Info().Msg("playback manager: Updated progress on MyAnimeList after AniList failure")
-			return nil
-		} else {
-			pm.Logger.Error().Err(malErr).Msg("playback manager: Error occurred while updating progress on MyAnimeList")
-		}
 		return ErrProgressUpdateAnilist
 	}
 

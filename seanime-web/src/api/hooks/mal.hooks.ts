@@ -1,7 +1,8 @@
 import { useServerMutation, useServerQuery } from "@/api/client/requests"
 import { EditMALListEntryProgress_Variables, MALAuth_Variables } from "@/api/generated/endpoint.types"
 import { API_ENDPOINTS } from "@/api/generated/endpoints"
-import { MalAuthResponse } from "@/api/generated/types"
+import { MalAuthResponse, Status } from "@/api/generated/types"
+import { useSetServerStatus } from "@/app/(main)/_hooks/use-server-status"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -28,15 +29,18 @@ export function useEditMALListEntryProgress() {
 
 export function useMALLogout() {
     const queryClient = useQueryClient()
+    const setServerStatus = useSetServerStatus()
 
-    return useServerMutation<boolean>({
+    return useServerMutation<Status>({
         endpoint: API_ENDPOINTS.MAL.MALLogout.endpoint,
         method: API_ENDPOINTS.MAL.MALLogout.methods[0],
         mutationKey: [API_ENDPOINTS.MAL.MALLogout.key],
-        onSuccess: async () => {
+        onSuccess: async data => {
+            if (data) {
+                setServerStatus(data)
+            }
             await queryClient.invalidateQueries({ queryKey: [API_ENDPOINTS.STATUS.GetStatus.key] })
             toast.success("Successfully logged out of MyAnimeList")
         },
     })
 }
-

@@ -7,12 +7,14 @@ import (
 	"seanime/internal/api/mal"
 	"seanime/internal/constants"
 	"seanime/internal/database/models"
+	"seanime/internal/platforms/malcollection"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/labstack/echo/v4"
+	"github.com/spf13/viper"
 )
 
 type MalAuthResponse struct {
@@ -147,13 +149,19 @@ func (h *Handler) HandleEditMALListEntryProgress(c echo.Context) error {
 //	@desc This will delete the MAL info from the database, effectively logging the user out.
 //	@desc The client should re-fetch the server status after this.
 //	@route /api/v1/mal/logout [POST]
-//	@returns bool
+//	@returns handlers.Status
 func (h *Handler) HandleMALLogout(c echo.Context) error {
 
 	err := h.App.Database.DeleteMalInfo()
 	if err != nil {
 		return h.RespondWithError(c, err)
 	}
+	if malcollection.Enabled() {
+		h.App.Config.Server.TrackerMode = malcollection.TrackerAnilist
+		malcollection.SetTrackerMode(malcollection.TrackerAnilist)
+		viper.Set("server.trackerMode", malcollection.TrackerAnilist)
+		_ = viper.WriteConfig()
+	}
 
-	return h.RespondWithData(c, true)
+	return h.RespondWithData(c, h.NewStatus(c))
 }

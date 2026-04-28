@@ -7,6 +7,7 @@ import (
 	"seanime/internal/api/mal"
 	"seanime/internal/database/db"
 	"strings"
+	"sync"
 
 	"github.com/rs/zerolog"
 )
@@ -17,11 +18,32 @@ const (
 	TrackerMAL     = "mal"
 )
 
-func TrackerMode() string {
-	if strings.EqualFold(os.Getenv(TrackerEnvName), TrackerMAL) {
+var trackerModeState = struct {
+	sync.RWMutex
+	mode string
+}{}
+
+func NormalizeTrackerMode(mode string) string {
+	if strings.EqualFold(mode, TrackerMAL) {
 		return TrackerMAL
 	}
 	return TrackerAnilist
+}
+
+func SetTrackerMode(mode string) {
+	trackerModeState.Lock()
+	defer trackerModeState.Unlock()
+	trackerModeState.mode = NormalizeTrackerMode(mode)
+}
+
+func TrackerMode() string {
+	trackerModeState.RLock()
+	mode := trackerModeState.mode
+	trackerModeState.RUnlock()
+	if mode != "" {
+		return NormalizeTrackerMode(mode)
+	}
+	return NormalizeTrackerMode(os.Getenv(TrackerEnvName))
 }
 
 func Enabled() bool {

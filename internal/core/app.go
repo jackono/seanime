@@ -37,6 +37,7 @@ import (
 	"seanime/internal/nativeplayer"
 	"seanime/internal/onlinestream"
 	"seanime/internal/platforms/anilist_platform"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/platforms/offline_platform"
 	"seanime/internal/platforms/platform"
 	"seanime/internal/platforms/simulated_platform"
@@ -210,6 +211,7 @@ func NewApp(configOpts *ConfigOptions, selfupdater *updater.SelfUpdater) *App {
 	if err != nil {
 		logger.Fatal().Err(err).Msgf("app: Failed to initialize config")
 	}
+	malcollection.SetTrackerMode(cfg.Server.TrackerMode)
 
 	// Compute SHA-256 hash of the server password
 	serverPasswordHash := ""
