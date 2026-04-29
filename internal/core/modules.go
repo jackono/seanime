@@ -2,6 +2,7 @@ package core
 
 import (
 	"seanime/internal/api/anilist"
+	"seanime/internal/api/mal"
 	"seanime/internal/continuity"
 	"seanime/internal/database/db"
 	"seanime/internal/database/db_bridge"
@@ -574,6 +575,7 @@ func (a *App) InitOrRefreshModules() {
 	// +---------------------+
 
 	if settings.Discord != nil && a.DiscordPresence != nil {
+		go a.refreshDiscordMALUsername()
 		go a.DiscordPresence.SetSettings(settings.Discord)
 	}
 
@@ -601,6 +603,37 @@ func (a *App) InitOrRefreshModules() {
 
 	a.Logger.Info().Msg("app: Refreshed modules")
 
+}
+
+func (a *App) refreshDiscordMALUsername() {
+	if a.DiscordPresence == nil || a.Database == nil {
+		return
+	}
+
+	malInfo, err := a.Database.GetMalInfo()
+	if err != nil {
+		return
+	}
+
+	malInfo, err = mal.VerifyMALAuth(malInfo, a.Database, a.Logger)
+	if err != nil {
+		a.Logger.Warn().Err(err).Msg("mal: Failed to verify auth for Discord profile button")
+		return
+	}
+
+	if malInfo.Username == "" {
+		malUser, err := mal.NewWrapper(malInfo.AccessToken, a.Logger).GetCurrentUser()
+		if err != nil {
+			a.Logger.Warn().Err(err).Msg("mal: Failed to fetch current user for Discord profile button")
+			return
+		}
+		malInfo.Username = malUser.Name
+		if _, err := a.Database.UpsertMalInfo(malInfo); err != nil {
+			a.Logger.Warn().Err(err).Msg("mal: Failed to save username for Discord profile button")
+		}
+	}
+
+	a.DiscordPresence.SetMalUsername(malInfo.Username)
 }
 
 // InitOrRefreshMediastreamSettings will initialize or refresh the mediastream settings.

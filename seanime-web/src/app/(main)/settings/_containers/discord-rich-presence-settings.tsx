@@ -51,18 +51,18 @@ export function DiscordRichPresenceSettings(props: DiscordRichPresenceSettingsPr
                     label="Hide Seanime Repository Button"
                 />
 
-                {/*<Field.Switch*/}
-                {/*    side="right"*/}
-                {/*    name="richPresenceShowAniListMediaButton"*/}
-                {/*    label="Show AniList Media Button"*/}
-                {/*    help="Show a button to open the media page on AniList."*/}
-                {/*/>*/}
+                <Field.Switch
+                    side="right"
+                    name="richPresenceShowAniListMediaButton"
+                    label="Show Tracker Media Button"
+                    help="Show a button to open the media page on the active tracking service."
+                />
 
                 <Field.Switch
                     side="right"
                     name="richPresenceShowAniListProfileButton"
-                    label="Show AniList Profile Button"
-                    help="Show a button to open your profile page on AniList."
+                    label="Show Tracker Profile Button"
+                    help="Show a button to open your profile page on the active tracking service."
                 />
 
                 {/*<Field.Switch*/}

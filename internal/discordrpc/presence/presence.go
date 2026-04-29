@@ -7,6 +7,7 @@ import (
 	"seanime/internal/database/models"
 	discordrpc_client "seanime/internal/discordrpc/client"
 	"seanime/internal/hook"
+	"seanime/internal/platforms/malcollection"
 	"seanime/internal/util"
 	"sync"
 	"time"
@@ -15,12 +16,13 @@ import (
 )
 
 type Presence struct {
-	client   *discordrpc_client.Client
-	settings *models.DiscordSettings
-	logger   *zerolog.Logger
-	hasSent  bool
-	username string
-	mu       sync.RWMutex
+	client          *discordrpc_client.Client
+	settings        *models.DiscordSettings
+	logger          *zerolog.Logger
+	hasSent         bool
+	anilistUsername string
+	malUsername     string
+	mu              sync.RWMutex
 
 	animeActivity               *AnimeActivity
 	lastAnimeActivityUpdateSent time.Time
@@ -132,8 +134,7 @@ func (p *Presence) SetSettings(settings *models.DiscordSettings) {
 	// Close the current client and stop event loop
 	p.Close()
 
-	settings.RichPresenceUseMediaTitleStatus = false    // Devnote: Not used anymore, disable
-	settings.RichPresenceShowAniListMediaButton = false // Devnote: Not used anymore, disable
+	settings.RichPresenceUseMediaTitleStatus = false // Devnote: Not used anymore, disable
 	p.settings = settings
 
 	// Create a new client if rich presence is enabled
@@ -149,7 +150,14 @@ func (p *Presence) SetUsername(username string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.username = username
+	p.anilistUsername = username
+}
+
+func (p *Presence) SetMalUsername(username string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.malUsername = username
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -262,6 +270,82 @@ func isSeanimeButtonPresent(activity *discordrpc_client.Activity) bool {
 	return false
 }
 
+type trackerLinkProvider struct {
+	mediaButtonLabel   string
+	profileButtonLabel string
+	animeURLFormat     string
+	mangaURLFormat     string
+	profileURLFormat   string
+	isMAL              bool
+}
+
+func currentTrackerLinkProvider() trackerLinkProvider {
+	if malcollection.Enabled() {
+		return trackerLinkProvider{
+			mediaButtonLabel:   "View on MAL",
+			profileButtonLabel: "MAL Profile",
+			animeURLFormat:     "https://myanimelist.net/anime/%d",
+			mangaURLFormat:     "https://myanimelist.net/manga/%d",
+			profileURLFormat:   "https://myanimelist.net/profile/%s",
+			isMAL:              true,
+		}
+	}
+
+	return trackerLinkProvider{
+		mediaButtonLabel:   "View on AniList",
+		profileButtonLabel: "AniList Profile",
+		animeURLFormat:     "https://anilist.co/anime/%d",
+		mangaURLFormat:     "https://anilist.co/manga/%d",
+		profileURLFormat:   "https://anilist.co/user/%s",
+	}
+}
+
+func (tl trackerLinkProvider) animeURL(id int) string {
+	return fmt.Sprintf(tl.animeURLFormat, id)
+}
+
+func (tl trackerLinkProvider) mangaURL(id int) string {
+	return fmt.Sprintf(tl.mangaURLFormat, id)
+}
+
+func (tl trackerLinkProvider) profileURL(username string) string {
+	return fmt.Sprintf(tl.profileURLFormat, username)
+}
+
+func (p *Presence) trackerProfileUsername(provider trackerLinkProvider) string {
+	if provider.isMAL {
+		return p.malUsername
+	}
+	return p.anilistUsername
+}
+
+func (p *Presence) applyTrackerButtons(activity *discordrpc_client.Activity, mediaURL string, provider trackerLinkProvider) {
+	activity.Buttons = make([]*discordrpc_client.Button, 0, 2)
+
+	if p.settings.RichPresenceShowAniListMediaButton {
+		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
+			Label: provider.mediaButtonLabel,
+			Url:   mediaURL,
+		})
+	}
+
+	if p.settings.RichPresenceShowAniListProfileButton {
+		if username := p.trackerProfileUsername(provider); username != "" && len(activity.Buttons) < 2 {
+			activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
+				Label: provider.profileButtonLabel,
+				Url:   provider.profileURL(username),
+			})
+		}
+	}
+
+	if !p.settings.RichPresenceHideSeanimeRepositoryButton && len(activity.Buttons) < 2 {
+		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
+			Label: "Seanime",
+			Url:   "https://seanime.app",
+		})
+	}
+}
+
 type AnimeActivity struct {
 	ID                  int     `json:"id"`
 	Title               string  `json:"title"`
@@ -310,12 +394,14 @@ func (p *Presence) SetAnimeActivity(a *AnimeActivity) {
 	}
 
 	activity := defaultActivity
+	trackerLinks := currentTrackerLinkProvider()
+	mediaURL := trackerLinks.animeURL(a.ID)
 	activity.Details = a.Title
-	activity.DetailsURL = fmt.Sprintf("https://anilist.co/anime/%d", a.ID)
+	activity.DetailsURL = mediaURL
 	activity.State = state
 	activity.Assets.LargeImage = a.Image
 	activity.Assets.LargeText = a.Title
-	activity.Assets.LargeURL = fmt.Sprintf("https://anilist.co/anime/%d", a.ID)
+	activity.Assets.LargeURL = mediaURL
 
 	// Calculate the start time
 	startTime := time.Now()
@@ -337,21 +423,7 @@ func (p *Presence) SetAnimeActivity(a *AnimeActivity) {
 		event.EndTimestamp = nil
 	}
 
-	activity.Buttons = make([]*discordrpc_client.Button, 0)
-
-	if p.settings.RichPresenceShowAniListProfileButton {
-		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
-			Label: "View Profile",
-			Url:   fmt.Sprintf("https://anilist.co/user/%s", p.username),
-		})
-	}
-
-	if !(p.settings.RichPresenceHideSeanimeRepositoryButton || len(activity.Buttons) > 1) {
-		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
-			Label: "Seanime",
-			Url:   "https://seanime.app",
-		})
-	}
+	p.applyTrackerButtons(&activity, mediaURL, trackerLinks)
 
 	// p.logger.Debug().Msgf("discordrpc: Setting anime activity: %s", a.Title)
 
@@ -518,29 +590,17 @@ func (p *Presence) LegacySetAnimeActivity(a *LegacyAnimeActivity) {
 	}
 
 	activity := defaultActivity
+	trackerLinks := currentTrackerLinkProvider()
+	mediaURL := trackerLinks.animeURL(a.ID)
 	activity.Details = a.Title
-	activity.DetailsURL = fmt.Sprintf("https://anilist.co/anime/%d", a.ID)
+	activity.DetailsURL = mediaURL
 	activity.State = state
 	activity.Assets.LargeImage = a.Image
 	activity.Assets.LargeText = a.Title
-	activity.Assets.LargeURL = fmt.Sprintf("https://anilist.co/anime/%d", a.ID)
+	activity.Assets.LargeURL = mediaURL
 	activity.Timestamps.Start.Time = time.Now()
 	activity.Timestamps.End = nil
-	activity.Buttons = make([]*discordrpc_client.Button, 0)
-
-	if p.settings.RichPresenceShowAniListProfileButton {
-		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
-			Label: "View Profile",
-			Url:   fmt.Sprintf("https://anilist.co/user/%s", p.username),
-		})
-	}
-
-	if !(p.settings.RichPresenceHideSeanimeRepositoryButton || len(activity.Buttons) > 1) {
-		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
-			Label: "Seanime",
-			Url:   "https://seanime.app",
-		})
-	}
+	p.applyTrackerButtons(&activity, mediaURL, trackerLinks)
 
 	// p.logger.Debug().Msgf("discordrpc: Setting anime activity: %s", a.Title)
 
@@ -584,33 +644,21 @@ func (p *Presence) SetMangaActivity(a *MangaActivity) {
 	event := &DiscordPresenceMangaActivityRequestedEvent{}
 
 	activity := defaultActivity
+	trackerLinks := currentTrackerLinkProvider()
+	mediaURL := trackerLinks.mangaURL(a.ID)
 	activity.Details = a.Title
-	activity.DetailsURL = fmt.Sprintf("https://anilist.co/manga/%d", a.ID)
+	activity.DetailsURL = mediaURL
 	activity.State = fmt.Sprintf("Reading Chapter %s", a.Chapter)
 	activity.Assets.LargeImage = a.Image
 	activity.Assets.LargeText = a.Title
-	activity.Assets.LargeURL = fmt.Sprintf("https://anilist.co/manga/%d", a.ID)
+	activity.Assets.LargeURL = mediaURL
 
 	now := time.Now()
 	activity.Timestamps.Start.Time = now
 	event.StartTimestamp = new(now.Unix())
 	activity.Timestamps.End = nil
 	event.EndTimestamp = nil
-	activity.Buttons = make([]*discordrpc_client.Button, 0)
-
-	if p.settings.RichPresenceShowAniListProfileButton && p.username != "" {
-		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
-			Label: "View Profile",
-			Url:   fmt.Sprintf("https://anilist.co/user/%s", p.username),
-		})
-	}
-
-	if !(p.settings.RichPresenceHideSeanimeRepositoryButton || len(activity.Buttons) > 1) {
-		activity.Buttons = append(activity.Buttons, &discordrpc_client.Button{
-			Label: "Seanime",
-			Url:   "https://seanime.app",
-		})
-	}
+	p.applyTrackerButtons(&activity, mediaURL, trackerLinks)
 
 	event.MangaActivity = a
 	event.Name = activity.Name

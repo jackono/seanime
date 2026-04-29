@@ -23,6 +23,12 @@ type (
 		client      *http.Client
 		logger      *zerolog.Logger
 	}
+
+	User struct {
+		ID      int    `json:"id"`
+		Name    string `json:"name"`
+		Picture string `json:"picture"`
+	}
 )
 
 func NewWrapper(accessToken string, logger *zerolog.Logger) *Wrapper {
@@ -86,6 +92,15 @@ func (w *Wrapper) doMutation(method, uri, encodedParams string) error {
 	return nil
 }
 
+func (w *Wrapper) GetCurrentUser() (*User, error) {
+	ret := &User{}
+	err := w.doQuery("GET", ApiBaseURL+"/users/@me", nil, "application/json", ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
 func VerifyMALAuth(malInfo *models.Mal, db *db.Database, logger *zerolog.Logger) (*models.Mal, error) {
 
 	// Token has not expired
@@ -142,7 +157,7 @@ func VerifyMALAuth(malInfo *models.Mal, db *db.Database, logger *zerolog.Logger)
 			ID:        1,
 			UpdatedAt: time.Now(),
 		},
-		Username:       "",
+		Username:       malInfo.Username,
 		AccessToken:    ret.AccessToken,
 		RefreshToken:   ret.RefreshToken,
 		TokenExpiresAt: time.Now().Add(time.Duration(ret.ExpiresIn) * time.Second),

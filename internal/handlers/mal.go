@@ -74,13 +74,21 @@ func (h *Handler) HandleMALAuth(c echo.Context) error {
 		return h.RespondWithError(c, err)
 	}
 
+	username := ""
+	malUser, err := mal.NewWrapper(ret.AccessToken, h.App.Logger).GetCurrentUser()
+	if err != nil {
+		h.App.Logger.Warn().Err(err).Msg("mal: Failed to fetch current user")
+	} else {
+		username = malUser.Name
+	}
+
 	// Save
 	malInfo := models.Mal{
 		BaseModel: models.BaseModel{
 			ID:        1,
 			UpdatedAt: time.Now(),
 		},
-		Username:       "",
+		Username:       username,
 		AccessToken:    ret.AccessToken,
 		RefreshToken:   ret.RefreshToken,
 		TokenExpiresAt: time.Now().Add(time.Duration(ret.ExpiresIn) * time.Second),
@@ -89,6 +97,9 @@ func (h *Handler) HandleMALAuth(c echo.Context) error {
 	_, err = h.App.Database.UpsertMalInfo(&malInfo)
 	if err != nil {
 		return h.RespondWithError(c, err)
+	}
+	if h.App.DiscordPresence != nil {
+		h.App.DiscordPresence.SetMalUsername(username)
 	}
 
 	return h.RespondWithData(c, ret)
@@ -155,6 +166,9 @@ func (h *Handler) HandleMALLogout(c echo.Context) error {
 	err := h.App.Database.DeleteMalInfo()
 	if err != nil {
 		return h.RespondWithError(c, err)
+	}
+	if h.App.DiscordPresence != nil {
+		h.App.DiscordPresence.SetMalUsername("")
 	}
 	if malcollection.Enabled() {
 		h.App.Config.Server.TrackerMode = malcollection.TrackerAnilist
