@@ -1,9 +1,11 @@
 package discordrpc_client
 
 import (
+	"errors"
 	"fmt"
-	"github.com/goccy/go-json"
 	"seanime/internal/discordrpc/ipc"
+
+	"github.com/goccy/go-json"
 )
 
 // Client wrapper for the Discord RPC client
@@ -48,7 +50,7 @@ func New(clientId string) (*Client, error) {
 	}
 
 	if responseBody.Code > 1000 {
-		return nil, fmt.Errorf(responseBody.Message)
+		return nil, errors.New(responseBody.Message)
 	}
 
 	return c, nil

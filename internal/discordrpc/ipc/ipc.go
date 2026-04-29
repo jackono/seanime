@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
@@ -30,16 +31,24 @@ type Socket struct {
 
 // Read the socket response
 func (socket *Socket) Read() (string, error) {
-	buf := make([]byte, 512)
-	payloadLength, err := socket.Conn.Read(buf)
+	header := make([]byte, 8)
+	if _, err := io.ReadFull(socket.Conn, header); err != nil {
+		return "", err
+	}
+
+	payloadLength := binary.LittleEndian.Uint32(header[4:8])
+	if payloadLength == 0 {
+		return "", fmt.Errorf("empty response")
+	}
+
+	buf := make([]byte, payloadLength)
+	_, err := io.ReadFull(socket.Conn, buf)
 	if err != nil {
 		return "", err
 	}
 
 	buffer := new(bytes.Buffer)
-	for i := 8; i < payloadLength; i++ {
-		buffer.WriteByte(buf[i])
-	}
+	buffer.Write(buf)
 
 	r := buffer.String()
 	if r == "" {

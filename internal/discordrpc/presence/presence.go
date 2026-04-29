@@ -416,11 +416,14 @@ func (p *Presence) SetAnimeActivity(a *AnimeActivity) {
 
 	select {
 	case p.eventQueue <- func() {
-		_ = p.client.SetActivity(activity)
-		// p.logger.Debug().Int("progress", a.Progress).Int("duration", a.Duration).Msgf("discordrpc: Anime activity set for %s", a.Title)
+		if err := p.client.SetActivity(activity); err != nil {
+			p.logger.Error().Err(err).Str("title", a.Title).Msg("discordrpc: Failed to set anime activity")
+			return
+		}
+		p.logger.Debug().Int("progress", a.Progress).Int("duration", a.Duration).Msgf("discordrpc: Anime activity set for %s", a.Title)
 	}:
 	default:
-		//p.logger.Error().Msgf("discordrpc: event queue is full for %s", a.Title)
+		p.logger.Error().Msgf("discordrpc: event queue is full for %s", a.Title)
 	}
 }
 
@@ -541,8 +544,16 @@ func (p *Presence) LegacySetAnimeActivity(a *LegacyAnimeActivity) {
 
 	// p.logger.Debug().Msgf("discordrpc: Setting anime activity: %s", a.Title)
 
-	p.eventQueue <- func() {
-		_ = p.client.SetActivity(activity)
+	select {
+	case p.eventQueue <- func() {
+		if err := p.client.SetActivity(activity); err != nil {
+			p.logger.Error().Err(err).Str("title", a.Title).Msg("discordrpc: Failed to set legacy anime activity")
+			return
+		}
+		p.logger.Debug().Msgf("discordrpc: Legacy anime activity set for %s", a.Title)
+	}:
+	default:
+		p.logger.Error().Msgf("discordrpc: event queue is full for %s", a.Title)
 	}
 }
 
@@ -660,7 +671,15 @@ func (p *Presence) SetMangaActivity(a *MangaActivity) {
 
 	p.logger.Debug().Msgf("discordrpc: Setting manga activity: %s", a.Title)
 
-	p.eventQueue <- func() {
-		_ = p.client.SetActivity(activity)
+	select {
+	case p.eventQueue <- func() {
+		if err := p.client.SetActivity(activity); err != nil {
+			p.logger.Error().Err(err).Str("title", a.Title).Msg("discordrpc: Failed to set manga activity")
+			return
+		}
+		p.logger.Debug().Msgf("discordrpc: Manga activity set for %s", a.Title)
+	}:
+	default:
+		p.logger.Error().Msgf("discordrpc: event queue is full for %s", a.Title)
 	}
 }
